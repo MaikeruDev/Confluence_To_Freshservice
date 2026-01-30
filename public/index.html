@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>KBify UI</title>
+  <style>
+    body { font-family: system-ui, Arial; margin: 0; background: #0b0f17; color: #e7eaf0; }
+    header { padding: 14px 18px; border-bottom: 1px solid #1c2433; display:flex; gap:12px; align-items:center; }
+    header h1 { font-size: 14px; margin: 0; opacity: .9; }
+    .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px; height: calc(100vh - 58px); box-sizing: border-box; }
+    .panel { background: #0f1624; border: 1px solid #1c2433; border-radius: 10px; display:flex; flex-direction:column; overflow:hidden; }
+    .panel .bar { padding: 10px 12px; border-bottom: 1px solid #1c2433; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .panel .bar strong { font-size: 12px; opacity: .9; }
+    textarea { flex:1; width:100%; padding: 12px; border:0; outline:none; resize:none; background:#0f1624; color:#e7eaf0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; line-height:1.45; }
+    .btns { display:flex; gap:8px; flex-wrap:wrap; }
+    button { background:#1c2a44; color:#e7eaf0; border:1px solid #2a3a5e; border-radius:8px; padding:8px 10px; font-size:12px; cursor:pointer; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    select, input { background:#0b1220; color:#e7eaf0; border:1px solid #2a3a5e; border-radius:8px; padding:7px 8px; font-size:12px; }
+    .status { font-size:12px; opacity:.85; padding: 0 12px 12px; }
+    .preview { flex:1; padding: 12px; overflow:auto; background:#0f1624; }
+    .muted { opacity:.7; font-size:12px; }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .split { display:flex; gap:8px; align-items:center; }
+    .pill { font-size:11px; opacity:.8; padding:4px 8px; border:1px solid #2a3a5e; border-radius:999px; background:#0b1220; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>KBify UI</h1>
+    <span class="pill">Freshservice HTML Formatter</span>
+  </header>
+
+  <div class="wrap">
+    <div class="panel">
+      <div class="bar">
+        <strong>Input</strong>
+        <div class="row">
+          <label class="muted">Model</label>
+          <input id="model" value="gpt-5.2-2025-12-11" style="width: 190px" />
+          <label class="muted">Temp</label>
+          <select id="temp">
+            <option value="0.0">0.0</option>
+            <option value="0.2" selected>0.2</option>
+            <option value="0.4">0.4</option>
+          </select>
+          <div class="btns">
+            <button id="generate">Generate</button>
+            <button id="clear">Clear</button>
+          </div>
+        </div>
+      </div>
+      <textarea id="input" placeholder="Paste raw notes / steps / mixed language text here..."></textarea>
+      <div class="status" id="status"></div>
+    </div>
+
+    <div class="panel">
+      <div class="bar">
+        <strong>Output (HTML)</strong>
+        <div class="btns">
+          <button id="copy">Copy HTML</button>
+          <button id="download">Download output.html</button>
+          <button id="togglePreview">Preview: OFF</button>
+        </div>
+      </div>
+
+      <textarea id="output" placeholder="Generated HTML will appear here..."></textarea>
+      <div class="preview" id="preview" style="display:none;"></div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const inputEl = $("input");
+    const outputEl = $("output");
+    const statusEl = $("status");
+    const generateBtn = $("generate");
+    const copyBtn = $("copy");
+    const downloadBtn = $("download");
+    const clearBtn = $("clear");
+    const togglePreviewBtn = $("togglePreview");
+    const previewEl = $("preview");
+    const modelEl = $("model");
+    const tempEl = $("temp");
+
+    let previewOn = false;
+
+    function setStatus(msg) { statusEl.textContent = msg || ""; }
+
+    async function generate() {
+      const input = inputEl.value || "";
+      if (!input.trim()) { setStatus("No input."); return; }
+
+      generateBtn.disabled = true;
+      setStatus("Generating…");
+
+      try {
+        const res = await fetch("/api/kbify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            input,
+            model: modelEl.value.trim() || undefined,
+            temperature: Number(tempEl.value)
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "Request failed");
+
+        outputEl.value = data.html || "";
+        setStatus("Done.");
+        if (previewOn) previewEl.innerHTML = data.html || "";
+      } catch (e) {
+        setStatus("Error: " + e.message);
+      } finally {
+        generateBtn.disabled = false;
+      }
+    }
+
+    generateBtn.addEventListener("click", generate);
+
+    clearBtn.addEventListener("click", () => {
+      inputEl.value = "";
+      outputEl.value = "";
+      previewEl.innerHTML = "";
+      setStatus("");
+    });
+
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(outputEl.value || "");
+        setStatus("Copied to clipboard.");
+      } catch {
+        setStatus("Copy failed (browser permission).");
+      }
+    });
+
+    downloadBtn.addEventListener("click", () => {
+      const blob = new Blob([outputEl.value || ""], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "output.html";
+      a.click();
+      URL.revokeObjectURL(url);
+      setStatus("Downloaded output.html");
+    });
+
+    togglePreviewBtn.addEventListener("click", () => {
+      previewOn = !previewOn;
+      togglePreviewBtn.textContent = "Preview: " + (previewOn ? "ON" : "OFF");
+      outputEl.style.display = previewOn ? "none" : "block";
+      previewEl.style.display = previewOn ? "block" : "none";
+      if (previewOn) previewEl.innerHTML = outputEl.value || "";
+    });
+
+    // Ctrl+Enter to generate
+    inputEl.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") generate();
+    });
+  </script>
+</body>
+</html>
